@@ -1,4 +1,9 @@
 import pandas as pd
+import os #tava dando erro de importação do openpyxl, então adicionei o import do os para resolver
+
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+caminho_entrada = os.path.join(diretorio_atual, '../data/brutos/pedidos_metalurgica_mezzalira.xlsx')
+caminho_saida = os.path.join(diretorio_atual, '../data/processed/planilha_final_mezzalira.xlsx')
 
 lista_logs = []
 
@@ -10,9 +15,6 @@ def registrar_log(encontrei, fiz, afetadas, justificativa):
         "Justificativa": justificativa
     }
     lista_logs.append(dic_log)
-
-caminho_entrada = '../data/brutos/pedidos_metalurgica_mezzalira.xlsx'
-caminho_saida = '../data/processed/planilha_final_mezzalira.xlsx'
 
 #camada bronze, leitura dos dados
 
@@ -53,7 +55,7 @@ df_prata["Cidade"] = df_prata["Cidade"].astype(str).str.strip()
 df_prata["Cidade"] = df_prata["Cidade"].replace({
     "recife": "Recife",
     "REC": "Recife",
-}), regex=False
+}, regex=False)
 
 registrar_log(
     encontrei="Nomes diferentes para Recife na coluna 'Cidade'.",
@@ -71,7 +73,7 @@ df_prata["Valor (R$)"] = (df_prata["Valor (R$)"].astype(str)
 registrar_log(
     encontrei="Valores numéricos digitados como texto ('R$ 630,00')",
     fiz="Removi o 'R$', converti as vírgulas em pontos e transformei em float",
-    afetadas="Coluna inteira de 'Valor (R$)'"
+    afetadas="Coluna inteira de 'Valor (R$)'",
     justificativa="Garantir que os valores sejam tratados como números para cálculos de faturamento."
 )
 
@@ -79,7 +81,7 @@ registrar_log(
 df_prata["Valor (R$)"] = (pd.to_numeric(df_prata["Valor (R$)"], errors='coerce'))
 
 #ajustando as datas, usei dayfirst para que o formato seja dia/mes/ano
-df_prata["Data do Pedido"] = pd.to_datetime(df_prata["Data do Pedido"], errors='coerce', dayfirst=True)
+df_prata["Data"] = pd.to_datetime(df_prata["Data"], errors='coerce', dayfirst=True)
 registrar_log(
     encontrei="Datas em formatos diferente",
     fiz="Usei pd.to_datetime() para forçar o padrão de data e hora, com dayfirst=True para que o formato seja dia/mês/ano",
@@ -89,10 +91,16 @@ registrar_log(
 
 df_log = pd.DataFrame(lista_logs)
 
-with pd.excel_writer(caminho_saida, engine='openpyxl') as writer:
+#camada gold
+
+df_prata["Mês"] = df_prata["Data"].dt.strftime('%m/%Y')
+
+df_ouro = df_prata.groupby(["Cidade", "Mês"], as_index=False)["Valor (R$)"].sum()
+
+df_ouro = df_ouro.sort_values(by=["Valor (R$)"], ascending=False)
+
+with pd.ExcelWriter(caminho_saida, engine='openpyxl') as writer:
     df_bronze.to_excel(writer, sheet_name='Bronze', index=False)
     df_prata.to_excel(writer, sheet_name='Prata', index=False)
     df_log.to_excel(writer, sheet_name='Log', index=False)
-
-
-
+    df_ouro.to_excel(writer, sheet_name='Ouro', index=False)
